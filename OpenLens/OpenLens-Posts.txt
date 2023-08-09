@@ -1,0 +1,43 @@
+WITH HashtagPosts AS (
+    SELECT post_id
+    FROM `lens-public-data.polygon.public_hashtag`
+    WHERE TRIM(hashtag) = 'openlens'
+    AND post_id IN (
+        SELECT post_id
+        FROM `lens-public-data.polygon.public_profile_post`
+        WHERE 
+            is_related_to_post IS NULL 
+            AND is_related_to_comment IS NULL 
+            AND is_metadata_processed = TRUE 
+            AND has_error = FALSE 
+            AND is_hidden = FALSE
+    )
+)
+
+SELECT 
+    'openlens' AS hashtag,
+    CASE 
+        WHEN c.amount = '0' OR c.amount IS NULL THEN 'Free'
+        ELSE c.currency
+    END AS currency,
+    COUNT(DISTINCT h.post_id) AS total_published_posts,
+    SUM(p.total_amount_of_collects + p.total_amount_of_mirrors + p.total_amount_of_comments + p.total_upvotes + p.total_downvotes) AS total_engagement,
+    SUM(p.total_amount_of_collects * COALESCE(SAFE_CAST(c.amount AS FLOAT64) / 1e18, 0)) AS revenue_of_collects,
+    CASE 
+    WHEN COUNT(DISTINCT CASE WHEN c.amount != '0' AND c.amount IS NOT NULL THEN h.post_id ELSE NULL END) = 0 THEN NULL
+    ELSE (SUM(p.total_amount_of_collects * COALESCE(SAFE_CAST(c.amount AS FLOAT64) / 1e18, 0)) / COUNT(DISTINCT CASE WHEN c.amount != '0' AND c.amount IS NOT NULL THEN h.post_id ELSE NULL END))
+END AS avg_revenue_per_post,
+    ARRAY_AGG(p.publication_id ORDER BY (p.total_amount_of_collects * COALESCE(SAFE_CAST(c.amount AS FLOAT64) / 1e18, 0)) DESC LIMIT 5) AS top_posts_by_revenue,
+    ARRAY_AGG(p.publication_id ORDER BY (p.total_amount_of_collects + p.total_amount_of_mirrors + p.total_amount_of_comments + p.total_upvotes + p.total_downvotes) DESC LIMIT 5) AS top_posts_by_engagement
+FROM 
+    HashtagPosts AS h
+JOIN 
+    `lens-public-data.polygon.public_publication_stats` AS p
+ON
+    h.post_id = p.publication_id
+LEFT JOIN
+    `lens-public-data.polygon.public_publication_collect_module_details` AS c
+ON
+    h.post_id = c.publication_id
+GROUP BY 
+    hashtag, currency

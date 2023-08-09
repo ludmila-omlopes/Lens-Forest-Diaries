@@ -1,0 +1,83 @@
+WITH CollectsData AS (
+    SELECT 
+        p.profile_id AS artist,
+        d.currency,
+        SAFE_CAST(d.amount AS FLOAT64) / 1e18 AS collect_amount,
+        COUNT(c.publication_id) AS total_items_collected,
+        CASE WHEN d.amount = '0' OR d.amount IS NULL THEN 'Free' ELSE 'Paid' END AS post_type
+    FROM 
+        `lens-public-data.polygon.public_publication_collect_module_collected_records` c
+    JOIN 
+        `lens-public-data.polygon.public_publication_collect_module_details` d
+    ON 
+        c.publication_id = d.publication_id
+    JOIN
+        `lens-public-data.polygon.public_profile_post` p
+    ON
+        c.publication_id = p.post_id
+    WHERE 
+        p.post_id IN (
+            SELECT post_id
+            FROM `lens-public-data.polygon.public_hashtag`
+            WHERE TRIM(hashtag) = 'openlens'
+        )
+        AND p.is_related_to_post IS NULL
+        AND p.is_related_to_comment IS NULL
+    GROUP BY 
+        artist, currency, d.amount, post_type
+)
+
+, ArtistsRevenue AS (
+    SELECT 
+        artist,
+        currency,
+        post_type,
+        SUM(collect_amount * total_items_collected) AS total_revenue,
+        SUM(total_items_collected) AS total_collects
+    FROM 
+        CollectsData
+    GROUP BY 
+        artist, currency, post_type
+)
+
+, ArtistsPosts AS (
+    SELECT 
+        profile_id AS artist,
+        COUNT(post_id) AS total_posts
+    FROM 
+        `lens-public-data.polygon.public_profile_post`
+    WHERE 
+        post_id IN (
+            SELECT post_id
+            FROM `lens-public-data.polygon.public_hashtag`
+            WHERE TRIM(hashtag) = 'openlens'
+        )
+        AND is_related_to_post IS NULL
+        AND is_related_to_comment IS NULL
+    GROUP BY 
+        artist
+)
+
+-- Top Artists by Revenue, Number of Posts Published, their Handle, and Total Collects
+SELECT 
+    r.artist,
+    prof.handle,
+    r.currency,
+    r.post_type,
+    r.total_revenue,
+    COALESCE(p.total_posts, 0) AS total_posts,
+    r.total_collects
+FROM 
+    ArtistsRevenue r
+LEFT JOIN 
+    ArtistsPosts p
+ON 
+    r.artist = p.artist
+JOIN 
+    `lens-public-data.polygon.public_profile` prof
+ON 
+    r.artist = prof.profile_id
+    where post_type = 'Paid'
+ORDER BY 
+    r.total_revenue DESC, r.currency, r.post_type
+LIMIT 6;

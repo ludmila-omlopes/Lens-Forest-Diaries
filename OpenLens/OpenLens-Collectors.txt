@@ -1,0 +1,102 @@
+WITH CollectsData AS (
+    SELECT 
+        c.collected_by AS collector,
+        d.currency,
+        SAFE_CAST(d.amount AS FLOAT64) / 1e18 AS collect_amount,
+        COUNT(c.publication_id) AS total_items_collected
+    FROM 
+        `lens-public-data.polygon.public_publication_collect_module_collected_records` c
+    JOIN 
+        `lens-public-data.polygon.public_publication_collect_module_details` d
+    ON 
+        c.publication_id = d.publication_id
+    WHERE 
+        c.publication_id IN (
+            SELECT post_id
+            FROM `lens-public-data.polygon.public_hashtag`
+            WHERE TRIM(hashtag) = 'openlens'
+        )
+    GROUP BY 
+        collector, currency, d.amount
+)
+
+, CollectorsProfile AS (
+    SELECT 
+        p.profile_id,
+        p.handle,
+        c.collector,
+        c.currency,
+        SUM(c.collect_amount * c.total_items_collected) AS total_spent,
+        SUM(c.total_items_collected) AS total_items
+    FROM 
+        CollectsData c
+    JOIN 
+        `lens-public-data.polygon.public_profile` p
+    ON 
+        c.collector = p.owned_by
+    GROUP BY 
+        p.profile_id, p.handle, c.collector, c.currency
+)
+
+-- Top Collectors by Amount Spent in the given currency
+SELECT 
+    profile_id,
+    handle,
+    currency,
+    total_spent
+FROM 
+    CollectorsProfile
+ORDER BY 
+    total_spent DESC, currency
+LIMIT 6;
+
+WITH CollectsData AS (
+    SELECT 
+        c.collected_by AS collector,
+        d.currency,
+        SAFE_CAST(d.amount AS FLOAT64) / 1e18 AS collect_amount,
+        COUNT(c.publication_id) AS total_items_collected
+    FROM 
+        `lens-public-data.polygon.public_publication_collect_module_collected_records` c
+    JOIN 
+        `lens-public-data.polygon.public_publication_collect_module_details` d
+    ON 
+        c.publication_id = d.publication_id
+    WHERE 
+        c.publication_id IN (
+            SELECT post_id
+            FROM `lens-public-data.polygon.public_hashtag`
+            WHERE TRIM(hashtag) = 'openlens'
+        )
+    GROUP BY 
+        collector, currency, d.amount
+)
+
+, CollectorsProfile AS (
+    SELECT 
+        p.profile_id,
+        p.handle,
+        c.collector,
+        c.currency,
+        SUM(c.collect_amount * c.total_items_collected) AS total_spent,
+        SUM(c.total_items_collected) AS total_items
+    FROM 
+        CollectsData c
+    JOIN 
+        `lens-public-data.polygon.public_profile` p
+    ON 
+        c.collector = p.owned_by
+    GROUP BY 
+        p.profile_id, p.handle, c.collector, c.currency
+)
+
+-- Top Collectors by Number of Items Collected
+SELECT 
+    profile_id,
+    handle,
+    total_items
+FROM 
+    CollectorsProfile
+ORDER BY 
+    total_items DESC
+LIMIT 6;
